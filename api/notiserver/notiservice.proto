@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package api.notiserver;
+
+option go_package = "dmgame/api/notiserver;notiserver";
+option java_multiple_files = true;
+option java_package = "api.notiserver";
+
+service NotiService {
+	rpc CreateNotiService (CreateNotiServiceRequest) returns (CreateNotiServiceReply);
+}
+
+message CreateNotiServiceRequest {}
+message CreateNotiServiceReply {}

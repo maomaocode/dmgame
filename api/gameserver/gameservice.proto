@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package api.gameserver;
+
+option go_package = "dmgame/api/gameserver;gameserver";
+option java_multiple_files = true;
+option java_package = "api.gameserver";
+
+service GameService {
+  rpc CreateGameService (CreateGameServiceRequest) returns (CreateGameServiceReply);
+  rpc TestApi(TestApiReq) returns(TestApiRes);
+}
+
+message CreateGameServiceRequest {}
+message CreateGameServiceReply {}
+
+message TestApiReq {
+
+}
+
+message TestApiRes {
+
+}

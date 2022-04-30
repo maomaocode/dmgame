@@ -11,8 +11,27 @@ import (
 )
 
 const (
-	OpHeartBeat = 2
-	OpAuth      = 7
+	HANDSHAKE         = 0
+	HANDSHAKE_REPLY   = 1
+	OpHeartBeat       = 2
+	OpHeartBeatReply  = 3
+	OpSendMsg         = 4
+	OpSendMsgReply    = 5
+	DISCONNECT_REPLY  = 6
+	OpAuth            = 7
+	OpAuthReply       = 8
+	RAW               = 9
+	PROTO_READY       = 10
+	PROTO_FINISH      = 11
+	CHANGE_ROOM       = 12
+	CHANGE_ROOM_REPLY = 13
+	REGISTER          = 14
+	REGISTER_REPLY    = 15
+	UNREGISTER        = 16
+	UNREGISTER_REPLY  = 17
+	//# B站业务自定义OP
+	//# MinBusinessOp = 1000
+	//# MaxBusinessOp = 10000
 )
 
 func DialSocket(url string) (*websocket.Conn, error) {
@@ -53,14 +72,23 @@ func ListenConn(ctx context.Context, conn *websocket.Conn, handler func(code int
 			return err
 		}
 
-		data = make([]byte, 0, dataLen)
+		if code == OpHeartBeatReply {
+			dd := make([]byte, 4)
+			_, err = conn.Read(dd)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		data = make([]byte, dataLen)
 		_, err = conn.Read(data)
 		if err != nil {
 			return err
 		}
 
 		if err := handler(code, data); err != nil {
-			fmt.Println(conn.RemoteAddr(), err)
+			fmt.Println("[ERR] ", conn.RemoteAddr(), err)
 		}
 	}
 }
@@ -87,11 +115,13 @@ func packMsg(code int32, msg interface{}) []byte {
 func unPackData(data []byte) (int32, int32, error) {
 	buf := bytes.NewBuffer(data)
 
-	var dataLen int32
-	var headLen int16
-	var version int16
-	var code int32
-	var seq int32
+	var (
+		dataLen int32
+		headLen int16
+		version int16
+		code    int32
+		seq     int32
+	)
 
 	if err := binary.Read(buf, binary.BigEndian, &dataLen); err != nil {
 		return 0, 0, err
@@ -109,5 +139,5 @@ func unPackData(data []byte) (int32, int32, error) {
 		return 0, 0, err
 	}
 
-	return code, dataLen, nil
+	return code, dataLen - int32(headLen), nil
 }

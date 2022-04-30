@@ -8,6 +8,7 @@ import (
 
 	"dmgame/pkg"
 
+	"github.com/bitly/go-simplejson"
 	"golang.org/x/net/websocket"
 )
 
@@ -17,9 +18,9 @@ const (
 	WebSocketURL = "wss://%s:%d/sub"
 )
 
-
-
 type Room struct {
+	service *NotiService
+
 	Uid        int
 	RoomID     int
 	LivaStatus int
@@ -29,6 +30,8 @@ type Room struct {
 
 	conn *websocket.Conn
 	mux  sync.Mutex
+
+	cmdHandlerMapping map[string]func(service *NotiService, data []byte) error
 }
 
 type DanMuHost struct {
@@ -36,6 +39,29 @@ type DanMuHost struct {
 	Port    int
 	WssPort int
 	WsPort  int
+}
+
+func NewRoom(service *NotiService, roomID int32) (*Room, error) {
+	room := new(Room)
+	room.service = service
+
+	if err := room.initRoomInfo(roomID); err != nil {
+		return nil, err
+	}
+
+	if err := room.initDanMuInfo(); err != nil {
+		return nil, err
+	}
+
+	if err := room.initConnection(); err != nil {
+		return nil, err
+	}
+
+	if err := room.initHandlers(); err != nil {
+		return nil, err
+	}
+
+	return room, nil
 }
 
 func (r *Room) initRoomInfo(roomID int32) error {
@@ -85,7 +111,8 @@ func (r *Room) initDanMuInfo() error {
 
 func (r *Room) initConnection() error {
 	for _, host := range r.danMuHost {
-		url := fmt.Sprintf(WebSocketURL, host.Host, host.WssPort)
+		//url := fmt.Sprintf(WebSocketURL, host.Host, host.WssPort)
+		url := fmt.Sprintf(WebSocketURL, "broadcastlv.chat.bilibili.com", host.WssPort)
 		conn, err := pkg.DialSocket(url)
 		if err != nil {
 			return err
@@ -121,27 +148,58 @@ func (r *Room) heartBeat() error {
 	return pkg.SendSocketMsg(r.conn, pkg.OpHeartBeat, nil)
 }
 
-func NewRoom(roomID int32) (*Room, error) {
-	room := new(Room)
-	if err := room.initRoomInfo(roomID); err != nil {
-		return nil, err
+func (r *Room) handler(code int32, data []byte) error {
+	fmt.Println("[REV] code=", code, " data=", string(data))
+
+	switch code {
+	case pkg.OpAuthReply:
+		_ = r.heartBeat()
+	case pkg.OpSendMsgReply:
+		jsonData, err := simplejson.NewJson(data)
+		if err != nil {
+			return err
+		}
+
+		cmd, err := jsonData.Get("cmd").String()
+		if err != nil {
+			return err
+		}
+
+		if handler, ok := r.cmdHandlerMapping[cmd]; ok {
+			if err := handler(r.service, data); err != nil {
+				return err
+			}
+		}
+
 	}
 
-	if err := room.initDanMuInfo(); err != nil {
-		return nil, err
+	return nil
+}
+
+func (r *Room) initHandlers() error {
+	if r.cmdHandlerMapping == nil {
+		r.cmdHandlerMapping = make(map[string]func(service *NotiService, data []byte) error)
 	}
 
-	if err := room.initConnection(); err != nil {
-		return nil, err
-	}
+	// *****************************************************************
+	// cmd handler
+
+	//收到弹幕
+	r.cmdHandlerMapping["DANMU_MSG"] = DanMuHandler
+	//有人送礼
+	r.cmdHandlerMapping["SEND_GIFT"] = GiftHandler
+	//有人上舰
+	r.cmdHandlerMapping["GUARD_BUY"] = BuyHandler
+	//醒目留言
+	r.cmdHandlerMapping["SUPER_CHAT_MESSAGE"] = ChatMsgHandler
+	//删除醒目留言
+	r.cmdHandlerMapping["SUPER_CHAT_MESSAGE_DELETE"] = ChadMsgDelHandler
+	// *****************************************************************
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		defer cancel()
-		if err := pkg.ListenConn(ctx, room.conn, func(code int32, data []byte) error {
-			fmt.Println("recv: ", code, string(data))
-			return nil
-		}); err != nil {
+		if err := pkg.ListenConn(ctx, r.conn, r.handler); err != nil {
 			fmt.Printf("%v while listening conn, closed\n", err)
 		}
 	}()
@@ -159,9 +217,10 @@ func NewRoom(roomID int32) (*Room, error) {
 			case <-ctx.Done():
 				return
 			case <-ticker:
-				_ = room.heartBeat()
+				_ = r.heartBeat()
 			}
 		}
 	}()
-	return room, nil
+
+	return nil
 }

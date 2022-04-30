@@ -2,14 +2,14 @@ package notiservices
 
 import (
 	"testing"
-	"time"
 )
 
 func TestRoom_NewRoom(t *testing.T) {
-	_, err := NewRoom(2208319)
+	_, err := NewRoom(&NotiService{}, 8722013)
 	if err != nil {
 		panic(t)
 	}
 
-	time.Sleep(10*time.Second)
+	//time.Sleep(10*time.Second)
+	select {}
 }

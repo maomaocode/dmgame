@@ -134,7 +134,7 @@ func (r *Room) initConnection() error {
 func (r *Room) auth() error {
 	params := map[string]interface{}{
 		"uid":      0,
-		"room_id":  r.RoomID,
+		"roomid":  r.RoomID,
 		"platform": "web",
 		"protover": 3,
 		"type":     2,
@@ -149,7 +149,7 @@ func (r *Room) heartBeat() error {
 }
 
 func (r *Room) handler(code int32, data []byte) error {
-	fmt.Println("[REV] code=", code, " data=", string(data))
+	//fmt.Println("[REV] code=", code, " data=", string(data))
 
 	switch code {
 	case pkg.OpAuthReply:

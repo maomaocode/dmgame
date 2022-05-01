@@ -2,15 +2,25 @@ package notiservices
 
 import (
 	"fmt"
+
+	"github.com/bitly/go-simplejson"
 )
 
 func DanMuHandler(service *NotiService, data []byte) error {
-	//jsonData,err := simplejson.NewJson(data)
-	//if err != nil {
-	//	return err
-	//}
+	jsonData, err := simplejson.NewJson(data)
+	if err != nil {
+		return err
+	}
+	info := jsonData.Get("info")
 
-	fmt.Println("[DanMu]",string(data))
+	var (
+		msg, _  = info.GetIndex(1).String()
+		//id, _   = info.GetIndex(2).GetIndex(0).Int()
+		name, _ = info.GetIndex(2).GetIndex(1).String()
+		lv, _   = info.GetIndex(4).GetIndex(0).Int()
+	)
+	fmt.Printf("[%s] lv%-3d: %s\n", name, lv, msg)
+
 	return nil
 }
 

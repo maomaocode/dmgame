@@ -5,7 +5,7 @@ import (
 )
 
 func TestRoom_NewRoom(t *testing.T) {
-	_, err := NewRoom(&NotiService{}, 8722013)
+	_, err := NewRoom(&NotiService{}, 489)
 	if err != nil {
 		panic(t)
 	}

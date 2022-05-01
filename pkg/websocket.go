@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 
+	"github.com/dsnet/compress/brotli"
 	"golang.org/x/net/websocket"
 )
 
@@ -35,7 +37,7 @@ const (
 )
 
 func DialSocket(url string) (*websocket.Conn, error) {
-	conn, err := websocket.Dial(url, "", "http://localhost")
+	conn, err := websocket.Dial(url, "", "https://www.bilibili.com/")
 	if err != nil {
 		return nil, err
 	}
@@ -67,27 +69,53 @@ func ListenConn(ctx context.Context, conn *websocket.Conn, handler func(code int
 		if err != nil {
 			return err
 		}
-		code, dataLen, err := unPackData(data)
+		msgHeader, err := unPackData(data)
 		if err != nil {
 			return err
 		}
 
-		if code == OpHeartBeatReply {
+		if msgHeader.code == OpHeartBeatReply {
 			dd := make([]byte, 4)
 			_, err = conn.Read(dd)
 			if err != nil {
 				return err
 			}
+			//var x int32 // 人气
+			//binary.Read(bytes.NewBuffer(dd), binary.BigEndian, &x)
+			//fmt.Println(x)
 			continue
 		}
 
-		data = make([]byte, dataLen)
+		data = make([]byte, msgHeader.dataLen-int32(msgHeader.headLen))
 		_, err = conn.Read(data)
 		if err != nil {
 			return err
 		}
 
-		if err := handler(code, data); err != nil {
+		if msgHeader.code == OpSendMsgReply && msgHeader.version == 3 {
+			reader, err := brotli.NewReader(bytes.NewBuffer(data), &brotli.ReaderConfig{})
+			if err != nil {
+				return err
+			}
+			data, _ = ioutil.ReadAll(reader)
+
+			for len(data) > 0 {
+				msgHeader, err = unPackData(data[:16])
+				if err != nil {
+					break
+				}
+
+				data = data[16:]
+				if err := handler(msgHeader.code, data[:msgHeader.dataLen-int32(msgHeader.headLen)]); err != nil {
+					fmt.Println("[ERR] ", conn.RemoteAddr(), err)
+				}
+				data = data[msgHeader.dataLen-int32(msgHeader.headLen):]
+			}
+
+			continue
+		}
+
+		if err := handler(msgHeader.code, data); err != nil {
 			fmt.Println("[ERR] ", conn.RemoteAddr(), err)
 		}
 	}
@@ -96,7 +124,10 @@ func ListenConn(ctx context.Context, conn *websocket.Conn, handler func(code int
 func packMsg(code int32, msg interface{}) []byte {
 	buf := bytes.NewBuffer(nil)
 
-	data, _ := json.Marshal(msg)
+	var data []byte
+	if msg != nil {
+		data, _ = json.Marshal(msg)
+	}
 
 	// 4bytes len + 2bytes header len + 2bytes version + 4bytes code + 4bytes seq
 	_ = binary.Write(buf, binary.BigEndian, int32(16+len(data)))
@@ -104,40 +135,39 @@ func packMsg(code int32, msg interface{}) []byte {
 	_ = binary.Write(buf, binary.BigEndian, int16(1))
 	_ = binary.Write(buf, binary.BigEndian, code)
 	_ = binary.Write(buf, binary.BigEndian, int32(1))
-
-	if len(data) != 0 && msg != nil {
-		_ = binary.Write(buf, binary.BigEndian, data)
-	}
+	_ = binary.Write(buf, binary.BigEndian, data)
 
 	return buf.Bytes()
 }
 
-func unPackData(data []byte) (int32, int32, error) {
+type MsgHeader struct {
+	dataLen int32
+	headLen int16
+	version int16
+	code    int32
+	seq     int32
+}
+
+func unPackData(data []byte) (MsgHeader, error) {
 	buf := bytes.NewBuffer(data)
 
-	var (
-		dataLen int32
-		headLen int16
-		version int16
-		code    int32
-		seq     int32
-	)
+	h := MsgHeader{}
 
-	if err := binary.Read(buf, binary.BigEndian, &dataLen); err != nil {
-		return 0, 0, err
+	if err := binary.Read(buf, binary.BigEndian, &h.dataLen); err != nil {
+		return h, err
 	}
-	if err := binary.Read(buf, binary.BigEndian, &headLen); err != nil {
-		return 0, 0, err
+	if err := binary.Read(buf, binary.BigEndian, &h.headLen); err != nil {
+		return h, err
 	}
-	if err := binary.Read(buf, binary.BigEndian, &version); err != nil {
-		return 0, 0, err
+	if err := binary.Read(buf, binary.BigEndian, &h.version); err != nil {
+		return h, err
 	}
-	if err := binary.Read(buf, binary.BigEndian, &code); err != nil {
-		return 0, 0, err
+	if err := binary.Read(buf, binary.BigEndian, &h.code); err != nil {
+		return h, err
 	}
-	if err := binary.Read(buf, binary.BigEndian, &seq); err != nil {
-		return 0, 0, err
+	if err := binary.Read(buf, binary.BigEndian, &h.seq); err != nil {
+		return h, err
 	}
 
-	return code, dataLen - int32(headLen), nil
+	return h, nil
 }

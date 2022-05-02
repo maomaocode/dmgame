@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package api.routerserver;
+
+option go_package = "dmgame/api/routerserver;routerserver";
+option java_multiple_files = true;
+option java_package = "api.routerserver";
+
+service RouterService {
+	rpc CreateRouterService (CreateRouterServiceRequest) returns (CreateRouterServiceReply);
+}
+
+message CreateRouterServiceRequest {}
+message CreateRouterServiceReply {}
